@@ -1,5 +1,11 @@
+FROM node:22-bookworm-slim AS node
+
 # 基础镜像：Ubuntu 22.04（兼容性最好）
 FROM ubuntu:22.04
+
+# 从 node 镜像复制 Node.js 运行环境
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 # 设置时区为上海
 ENV TZ=Asia/Shanghai
@@ -7,7 +13,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 安装依赖（Qt5、ICU、glib、zlib 等）
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     libglib2.0-0 libglib2.0-bin libx11-6 libx11-xcb1 libgl1-mesa-glx \
     libharfbuzz0b libfreetype6 fontconfig \
     libxrender1 libxi6 libxext6 libxfixes3 libxcb1 \
@@ -19,11 +25,12 @@ RUN apt-get update && \
     libxkbcommon0 libxkbcommon-x11-0 libasound2 \
     libmtdev1 libinput10 libquazip5-1 \
     fish wget tar curl \
-    # n 需要这些依赖
-    git make \
     # tini 用于作为 PID 1 进程，处理僵尸进程
     tini && \
-    rm -rf /var/lib/apt/lists/*
+    # 清理缓存
+    rm -rf /var/lib/apt/lists/* && \
+    apt purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false && \
+    rm -rf /tmp/*
 
 ARG HBUILDERX_URL
 
@@ -36,16 +43,9 @@ RUN wget ${HBUILDERX_URL} -O hbuilderx.tar.gz && \
 
 # 创建用户 node
 RUN useradd -m -s /usr/bin/fish node
-ENV N_PREFIX=/home/node/.n
-
-# 以用户 node 安装 nodejs 22
-USER node
-RUN curl -L https://bit.ly/n-install | bash -s -- -y 22 && \
-    mkdir -p $HOME/.n && \
-    ${N_PREFIX}/bin/n 22
 
 # 设置环境变量
-ENV PATH="${N_PREFIX}/bin:/opt/hbuilderx:/opt/hbuilderx/bin:${PATH}"
+ENV PATH="/opt/hbuilderx:/opt/hbuilderx/bin:${PATH}"
 
 COPY ./docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
