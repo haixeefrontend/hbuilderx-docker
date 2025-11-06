@@ -51,8 +51,15 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hbuilderx-${{ matrix.hbuilderx.version }}-image
-          path: ./hbuilderx.${{ matrix.hbuilderx.version }}*.tar
+          name: hbuilderx.${{ matrix.hbuilderx.version }}.tar.zip
+          path: ./hbuilderx.${{ matrix.hbuilderx.version }}.tar
+
+      - name: Upload slim artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hbuilderx.${{ matrix.hbuilderx.version }}-slim.tar.zip
+          path: ./hbuilderx.${{ matrix.hbuilderx.version }}-slim.tar
+          
 
   release:
     needs: build
