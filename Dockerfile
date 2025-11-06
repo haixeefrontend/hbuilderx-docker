@@ -36,7 +36,7 @@ ARG HBUILDERX_URL
 
 # 下载 HBuilderX
 WORKDIR /opt
-RUN wget ${HBUILDERX_URL} -O hbuilderx.tar.gz && \
+RUN wget --no-check-certificate ${HBUILDERX_URL} -O hbuilderx.tar.gz && \
     mkdir /opt/hbuilderx && \
     tar -xzf hbuilderx.tar.gz -C /opt/hbuilderx --strip-components=1 && \
     rm hbuilderx.tar.gz
