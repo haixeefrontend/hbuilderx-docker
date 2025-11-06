@@ -12,6 +12,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: true
+      matrix:
+        hbuilderx:
+          - version: alpha
+            url: https://download1.dcloud.net.cn/download/HBuilderX.4.84.2025102304-alpha.linux_x64.full.tar.gz
+          - version: stable
+            url: https://download1.dcloud.net.cn/download/HBuilderX.4.84.2025110307.linux_x64.full.tar.gz
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,18 +28,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image and save to file
+      - name: Build Docker image for HBuilderX ${{ matrix.hbuilderx.version }}
         run: |
           docker buildx build \
             --platform linux/amd64 \
-            -t hbuilderx:${GITHUB_REF_NAME} \
-            --output type=docker,dest=./hbuilderx.tar .
+            -t hbuilderx:${{ matrix.hbuilderx.version }} \
+            --build-arg HBUILDERX_URL=${{ matrix.hbuilderx.url }} \
+            --output type=docker,dest=./hbuilderx.${{ matrix.hbuilderx.version }}.tar .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: hbuilderx-image
-          path: ./hbuilderx.tar
+          path: ./hbuilderx.${{ matrix.hbuilderx.version }}.tar
 
   release:
     needs: build
@@ -46,6 +56,27 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./hbuilderx.tar
+          files: ./hbuilderx.*.tar
+          body: |
+            ## HBuilderX Docker Images
+
+            This release contains Docker images for HBuilderX.
+
+            - hbuilderx.alpha.tar: Docker image for HBuilderX Alpha version
+            - hbuilderx.stable.tar: Docker image for HBuilderX Stable version
+
+            ### Usage
+
+            To load the Docker image, use the following command:
+
+            ```bash
+            docker load -i hbuilderx.<version>.tar
+            ```
+
+            After loading the image, you can run the container using:
+            
+            ```bash
+            docker run -it hbuilderx:<tag>
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

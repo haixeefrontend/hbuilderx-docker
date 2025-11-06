@@ -1,6 +1,10 @@
 # 基础镜像：Ubuntu 22.04（兼容性最好）
 FROM ubuntu:22.04
 
+# 设置时区为上海
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # 安装依赖（Qt5、ICU、glib、zlib 等）
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -19,19 +23,25 @@ RUN apt-get update && \
     git make && \
     rm -rf /var/lib/apt/lists/*
 
-# 安装 nodejs 22
-RUN curl -L https://bit.ly/n-install | bash -s -- -y 22 && \
-    /root/n/bin/n 22
+ARG HBUILDERX_URL
 
 # 下载 HBuilderX
 WORKDIR /opt
-RUN wget https://download1.dcloud.net.cn/download/HBuilderX.4.84.2025110307.linux_x64.full.tar.gz -O hbuilderx.tar.gz && \
+RUN wget ${HBUILDERX_URL} -O hbuilderx.tar.gz && \
     mkdir /opt/hbuilderx && \
     tar -xzf hbuilderx.tar.gz -C /opt/hbuilderx --strip-components=1 && \
     rm hbuilderx.tar.gz
 
+# 创建用户 node
+RUN useradd -m -s /usr/bin/fish node
+
+# 以用户 node 安装 nodejs 22
+USER node
+RUN curl -L https://bit.ly/n-install | bash -s -- -y 22 && \
+    /home/node/n/bin/n 22
+
 # 设置环境变量
-ENV PATH="/root/n/bin:/opt/hbuilderx:/opt/hbuilderx/bin:${PATH}"
+ENV PATH="/home/node/n/bin:/opt/hbuilderx:/opt/hbuilderx/bin:${PATH}"
 
 # 默认启动 shell
 CMD ["fish"]
