@@ -15,6 +15,8 @@ RUN apt-get update && \
     libxkbcommon0 libxkbcommon-x11-0 libasound2 \
     libmtdev1 libinput10 libquazip5-1 \
     fish wget tar curl && \
+    # n 需要这些依赖
+    git make && \
     rm -rf /var/lib/apt/lists/*
 
 # 安装 nodejs 22
