@@ -28,7 +28,8 @@ RUN if [ ${SLIM} == "true" ]; then \
     # 创建 plugins 目录
     mkdir -p /opt/hbuilderx/plugins && \
     # 复制需要保留的插件
-    cp -r /opt/hbuilderx_full/plugins/{about,compile-dart-sass,compile-less,compile-node-sass,uniapp-cli,uniapp-cli-vite} /opt/hbuilderx/plugins/
+    cp -r /opt/hbuilderx_full/plugins/{about,compile-dart-sass,compile-less,compile-node-sass,uniapp-cli,uniapp-cli-vite} /opt/hbuilderx/plugins/ ;\
+    fi
 
 # 基础镜像：Ubuntu 22.04（兼容性最好）
 FROM ubuntu:22.04
