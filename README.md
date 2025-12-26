@@ -1,6 +1,15 @@
-# HBuilderX Linux Docker Image
+<div align="center">
+    <h1>HBuilderX Linux Docker Image</h1>
+</div>
 
-这个仓库包含了用于构建 HBuilderX 的 Linux 版本 Docker 镜像的配置文件和脚本。
+<div align="center">
+
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/haixeefrontend/hbuilderx-docker/ci.yml?style=flat-square&label=CI)](https://github.com/haixeefrontend/hbuilderx-docker/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/haixeefrontend/hbuilderx-docker?style=flat-square)](https://github.com/haixeefrontend/hbuilderx-docker/releases/latest)
+
+</div>
+
+这个仓库包含了用于构建 [HBuilderX](https://hx.dcloud.net.cn/) 的 [Linux](https://hx.dcloud.net.cn/Tutorial/install/linux-cli) 版本 Docker 镜像的配置文件和脚本。
 
 此外这个仓库包含了 GitHub Actions 工作流配置文件，用于在云端构建 Docker 镜像并发布到 GitHub Release。
 
