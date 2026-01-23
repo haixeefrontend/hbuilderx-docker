@@ -1,10 +1,19 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starting HBuilderX in background..."
+log() {
+  echo "[entrypoint] $*"
+}
 
-exec su-exec node /opt/hbuilderx/HBuilderX > /dev/null 2>&1 &
+log "🚀 Starting HBuilderX in background..."
 
-echo "✅ HBuilderX started."
+su-exec node /opt/hbuilderx/cli open > /var/log/hbuilderx.log 2>&1
 
-if [ "$#" -gt 0 ]; then exec su-exec node "$@"; else exec su-exec node "bash"; fi
+log "✅ HBuilderX started."
+
+if [ "$#" -gt 0 ]; then
+  log "Running command: $*"
+  exec su-exec node "$@"
+else
+  exec su-exec node "bash"
+fi
