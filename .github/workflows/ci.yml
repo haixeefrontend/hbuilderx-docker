@@ -10,7 +10,7 @@ jobs:
 
   download:
     runs-on: ubuntu-latest
-    name: Download HBuilderX (${{ matrix.hbuilderx.version }})
+    name: Download HBuilderX
 
     outputs:
       version: ${{ steps.get-versions.outputs.version }}
@@ -54,7 +54,7 @@ jobs:
           - true
           - false
 
-    name: Build HBuilderX Docker Image (${{ matrix.slim && '-slim' || '' }})
+    name: Build HBuilderX Docker Image ${{ matrix.slim && '(slim)' || '' }}
 
     steps:
       - name: Checkout code
@@ -62,6 +62,13 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Cache HBuilderX tgz
+        id: cache-hbuilderx
+        uses: actions/cache@v4
+        with:
+          key: hbuilderx-${{ needs.download.outputs.version }}
+          path: ./.cache/hbuilderx
 
       - name: Build Docker image for HBuilderX ${{ matrix.slim && 'slim' || 'full' }}
         run: |
