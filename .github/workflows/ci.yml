@@ -16,10 +16,8 @@ jobs:
       fail-fast: true
       matrix:
         hbuilderx:
-          - version: alpha
-            url: https://download1.dcloud.net.cn/download/HBuilderX.4.87.2025112602-alpha.linux_x64.full.tar.gz
-          - version: stable
-            url: https://download1.dcloud.net.cn/download/HBuilderX.4.87.2025121004.linux_x64.full.tar.gz
+          - version: 5.0.2026013113-alpha
+            url: https://download1.dcloud.net.cn/download/HBuilderX.5.0.2026013113-alpha.linux_x64.full.tar.gz
         slim:
           - true
           - false
@@ -34,13 +32,13 @@ jobs:
         id: cache-hbuilderx
         uses: actions/cache@v4
         with:
-          key: hbuilderx-${{ matrix.hbuilderx.url }}
+          key: hbuilderx-${{ matrix.hbuilderx.version }}
           path: ./.cache/hbuilderx
 
       - name: Download HBuilderX ${{ matrix.hbuilderx.version }}
         if: steps.cache-hbuilderx.outputs.cache-hit != 'true'
         run: |
-          wget -O ./hbuilderx.tar.gz ${{ matrix.hbuilderx.url }}
+          wget -O ./hbuilderx.tar.gz https://download1.dcloud.net.cn/download/HBuilderX.${{ matrix.hbuilderx.version }}.linux_x64.full.tar.gz
           mkdir -p ./.cache/hbuilderx
           tar -xzf hbuilderx.tar.gz -C ./.cache/hbuilderx --strip-components=1
 
@@ -79,15 +77,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./hbuilderx.*.tar
+          prerelease: ${{ contains(matrix.hbuilderx.version, '-alpha') }}
+          name: v${{ matrix.hbuilderx.version }}
+          tag_name: v${{ matrix.hbuilderx.version }}
           body: |
             ## HBuilderX Docker Images
 
             This release contains Docker images for HBuilderX.
 
-            - hbuilderx.stable.tar: Docker image for HBuilderX Stable version
-            - hbuilderx.stable-slim.tar: Slim Docker image for HBuilderX Stable version
-            - hbuilderx.alpha.tar: Docker image for HBuilderX Alpha version
-            - hbuilderx.alpha-slim.tar: Slim Docker image for HBuilderX Alpha version
+            - hbuilderx.<version>.tar: Docker image for HBuilderX Stable version
+            - hbuilderx.<version>-slim.tar: Slim Docker image for HBuilderX Stable version
+            - hbuilderx.<version>-alpha.tar: Docker image for HBuilderX Alpha version
+            - hbuilderx.<version>-alpha-slim.tar: Slim Docker image for HBuilderX Alpha version
 
             ### Usage
 

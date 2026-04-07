@@ -36,11 +36,13 @@ RUN apt-get update && \
     # 精简 HBuilderX
     # plugins 目录下只保留:
     #   about - 整个插件目录的 manifest
-    #   uniapp-uts-v1 - UniApp UTS 编译器
     #   compile-less - less 编译器
     #   compile-node-sass - sass 编译器
+    #   uniapp-basic - UniApp 基础功能插件
     #   uniapp-cli - UniApp Vue 2 编译器
     #   uniapp-cli-vite - UniApp Vue 3 (Vite) 编译器
+    #   uniapp-extension - UniApp 扩展功能插件（如发布打包）
+    #   uniapp-uts-v1 - UniApp UTS 编译器
     if [ "${SLIM}" = "true" ]; then \
     # 先把文件夹名字改成临时的
     mv /opt/hbuilderx /opt/hbuilderx_full && \
@@ -52,7 +54,13 @@ RUN apt-get update && \
     # 创建 plugins 目录
     mkdir -p /opt/hbuilderx/plugins && \
     # 复制需要保留的插件
-    for f in about uniapp-uts-v1 compile-less compile-node-sass uniapp-cli uniapp-cli-vite; \
+    for f in about \
+        compile-less compile-node-sass \
+        hbuilderx-language-services hx-language-pack-zh-cn \
+        launcher \
+        node_modules \
+        uniapp-basic uniapp-cli uniapp-cli-vite uniapp-extension uniapp-uts-v1 \
+    ; \
         do cp -r /opt/hbuilderx_full/plugins/$f /opt/hbuilderx/plugins/; done \
     fi;
 
