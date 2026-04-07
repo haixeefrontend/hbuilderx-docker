@@ -4,65 +4,85 @@ on:
   push:
     branches:
       - master
-    tags:
-      - "v*"
   workflow_dispatch:
 
 jobs:
-  build:
+
+  download:
     runs-on: ubuntu-latest
+    name: Download HBuilderX (${{ matrix.hbuilderx.version }})
 
-    strategy:
-      fail-fast: true
-      matrix:
-        hbuilderx:
-          - version: 5.0.2026013113-alpha
-            url: https://download1.dcloud.net.cn/download/HBuilderX.5.0.2026013113-alpha.linux_x64.full.tar.gz
-        slim:
-          - true
-          - false
-
-    name: Build HBuilderX Docker Image (${{ matrix.hbuilderx.version }}${{ matrix.slim && '-slim' || '' }})
+    outputs:
+      version: ${{ steps.get-versions.outputs.version }}
+      url: ${{ steps.get-versions.outputs.url }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Get Latest HBuilderX Versions
+        id: get-versions
+        run: |
+          version=$(cat versions.json | jq -r '.[0].version')
+          url="$(cat versions.json | jq -r '.[0].url')"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "url=$url" >> $GITHUB_OUTPUT
+
       - name: Cache HBuilderX tgz
         id: cache-hbuilderx
         uses: actions/cache@v4
         with:
-          key: hbuilderx-${{ matrix.hbuilderx.version }}
+          key: hbuilderx-${{ steps.get-versions.outputs.version }}
           path: ./.cache/hbuilderx
 
-      - name: Download HBuilderX ${{ matrix.hbuilderx.version }}
+      - name: Download HBuilderX ${{ steps.get-versions.outputs.version }}
         if: steps.cache-hbuilderx.outputs.cache-hit != 'true'
         run: |
-          wget -O ./hbuilderx.tar.gz https://download1.dcloud.net.cn/download/HBuilderX.${{ matrix.hbuilderx.version }}.linux_x64.full.tar.gz
+          wget -O ./hbuilderx.tar.gz ${{ steps.get-versions.outputs.url }}
           mkdir -p ./.cache/hbuilderx
           tar -xzf hbuilderx.tar.gz -C ./.cache/hbuilderx --strip-components=1
+
+  build:
+    runs-on: ubuntu-latest
+
+    needs: download
+
+    strategy:
+      fail-fast: true
+      matrix:
+        slim:
+          - true
+          - false
+
+    name: Build HBuilderX Docker Image (${{ matrix.slim && '-slim' || '' }})
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image for HBuilderX ${{ matrix.hbuilderx.version }}
+      - name: Build Docker image for HBuilderX ${{ matrix.slim && 'slim' || 'full' }}
         run: |
           docker buildx build \
             --platform linux/amd64 \
-            -t hbuilderx:${{ matrix.hbuilderx.version }} \
+            -t hbuilderx:${{ needs.download.outputs.version }} \
             --build-arg HBUILDERX_PATH=./.cache/hbuilderx \
             --build-arg SLIM=${{ matrix.slim }} \
-            --output type=docker,dest=./hbuilderx.${{ matrix.hbuilderx.version }}${{ matrix.slim && '-slim' || '' }}.tar .
+            --output type=docker,dest=./hbuilderx.${{ needs.download.outputs.version }}${{ matrix.slim && '-slim' || '' }}.tar .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hbuilderx.${{ matrix.hbuilderx.version }}${{ matrix.slim && '-slim' || '' }}.tar.zip
-          path: ./hbuilderx.${{ matrix.hbuilderx.version }}${{ matrix.slim && '-slim' || '' }}.tar
+          name: hbuilderx.${{ needs.download.outputs.version }}${{ matrix.slim && '-slim' || '' }}.tar.zip
+          path: ./hbuilderx.${{ needs.download.outputs.version }}${{ matrix.slim && '-slim' || '' }}.tar
 
   release:
-    needs: build
-    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v'))
+    needs:
+      - download
+      - build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -77,9 +97,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./hbuilderx.*.tar
-          prerelease: ${{ contains(matrix.hbuilderx.version, '-alpha') }}
-          name: v${{ matrix.hbuilderx.version }}
-          tag_name: v${{ matrix.hbuilderx.version }}
+          prerelease: ${{ contains(needs.download.outputs.version, '-alpha') }}
+          name: v${{ needs.download.outputs.version }}
+          tag_name: v${{ needs.download.outputs.version }}
           body: |
             ## HBuilderX Docker Images
 
