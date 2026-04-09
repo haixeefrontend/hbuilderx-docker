@@ -1,0 +1,83 @@
+name: Sync Versions
+
+on:
+  schedule:
+    # Run on every Mon/Wed/Fri at 00:00 UTC
+    - cron: '0 0 * * 1,3,5'
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Query new versions
+        id: query-versions
+        run: |
+          # Get versions from both release and alpha changelogs, then sort and deduplicate them
+          function get_versions() {
+            local -n ref=$1
+            local url=$2
+            ref+=($(curl -s $url | grep -Eo '^## [0-9]+\.[0-9]+\.[0-9]+(-alpha)?' | sed 's/## //' | uniq))
+          }
+
+          versions=()
+          get_versions versions "https://hx.dcloud.net.cn/zh-cn/Tutorial/changelog/ReleaseNote_release.md?timestamp=$(date +%s%3N)"  
+          get_versions versions "https://hx.dcloud.net.cn/zh-cn/Tutorial/changelog/ReleaseNote_alpha.md?timestamp=$(date +%s%3N)"
+          versions=($(printf "%s\n" "${versions[@]}" | sort -urV))
+
+          # Current latest version is the first one in versions.json
+          # We want to find all versions that are newer than the latest version in versions.json
+          latest_version=$(cat versions.json | jq -r '.[0].version')
+          new_versions=()
+          for version in "${versions[@]}"; do
+            if [[ "$version" == "$latest_version" ]]; then
+              break
+            fi
+            new_versions+=("$version")
+          done
+
+          echo "new_versions=$(printf "%s\n" "${new_versions[@]}" | jq -R . | jq -s .)" >> $GITHUB_OUTPUT
+
+      - name: Update versions.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          new_versions=${{ steps.query-versions.outputs.new_versions }}
+          if [ -z "$new_versions" ] || [ "$new_versions" == "[]" ]; then
+            echo "No new versions found. Exiting."
+            exit 0
+          fi
+          echo "New versions to add: $new_versions"
+          for version in "${new_versions[@]}"; do
+            new_entries=$(echo "$version" | jq -R '{
+              version: .,
+              url: "https://download1.dcloud.net.cn/download/HBuilderX." + . + ".linux_x64.full.tar.gz"
+            }' | jq -s .)
+            echo "Appending new entries for version $version:"
+            echo "$new_entries"
+            jq -s '.[0] + .[1]' <(echo "$new_entries") versions.json > tmp_versions.json && mv tmp_versions.json versions.json
+
+            echo "Updated versions.json:"
+            head -n 10 versions.json
+
+            git add versions.json
+            git commit -m "ci: update HBuilderX version to $version"
+            git push origin master
+
+            ref=$(git rev-parse HEAD)
+
+            gh workflow run ci.yml -f ref=$ref
+          done

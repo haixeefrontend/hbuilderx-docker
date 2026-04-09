@@ -5,9 +5,12 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      ref:
+        required: false
+        type: string
 
 jobs:
-
   download:
     runs-on: ubuntu-latest
     name: Download HBuilderX
@@ -15,10 +18,13 @@ jobs:
     outputs:
       version: ${{ steps.get-versions.outputs.version }}
       url: ${{ steps.get-versions.outputs.url }}
+      should_skip: ${{ steps.get-versions.outputs.should_skip }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || '' }}
 
       - name: Get Latest HBuilderX Versions
         id: get-versions
@@ -27,8 +33,14 @@ jobs:
           url="$(cat versions.json | jq -r '.[0].url')"
           echo "version=$version" >> $GITHUB_OUTPUT
           echo "url=$url" >> $GITHUB_OUTPUT
+          if git ls-remote --tags origin | grep -q "refs/tags/v${version}$"; then
+            echo "should_skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_skip=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Cache HBuilderX tgz
+        if: steps.get-versions.outputs.should_skip != 'true'
         id: cache-hbuilderx
         uses: actions/cache@v5
         with:
@@ -36,7 +48,7 @@ jobs:
           path: ./.cache/hbuilderx
 
       - name: Download HBuilderX ${{ steps.get-versions.outputs.version }}
-        if: steps.cache-hbuilderx.outputs.cache-hit != 'true'
+        if: steps.cache-hbuilderx.outputs.cache-hit != 'true' && steps.get-versions.outputs.should_skip != 'true'
         run: |
           wget -O ./hbuilderx.tar.gz ${{ steps.get-versions.outputs.url }}
           mkdir -p ./.cache/hbuilderx
@@ -46,6 +58,7 @@ jobs:
     runs-on: ubuntu-latest
 
     needs: download
+    if: needs.download.outputs.should_skip != 'true'
 
     strategy:
       fail-fast: true
@@ -59,6 +72,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || '' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -89,7 +104,7 @@ jobs:
     needs:
       - download
       - build
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.download.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -107,15 +122,16 @@ jobs:
           prerelease: ${{ contains(needs.download.outputs.version, '-alpha') }}
           name: v${{ needs.download.outputs.version }}
           tag_name: v${{ needs.download.outputs.version }}
+          target_commitish: ${{ github.sha }}
           body: |
             ## HBuilderX Docker Images
 
             This release contains Docker images for HBuilderX.
 
-            - hbuilderx.<version>.tar: Docker image for HBuilderX Stable version
-            - hbuilderx.<version>-slim.tar: Slim Docker image for HBuilderX Stable version
-            - hbuilderx.<version>-alpha.tar: Docker image for HBuilderX Alpha version
-            - hbuilderx.<version>-alpha-slim.tar: Slim Docker image for HBuilderX Alpha version
+            - hbuilderx.\<version\>.tar: Docker image for HBuilderX Stable version
+            - hbuilderx.\<version\>-slim.tar: Slim Docker image for HBuilderX Stable version
+            - hbuilderx.\<version\>-alpha.tar: Docker image for HBuilderX Alpha version
+            - hbuilderx.\<version\>-alpha-slim.tar: Slim Docker image for HBuilderX Alpha version
 
             ### Usage
 
@@ -128,7 +144,7 @@ jobs:
             After loading the image, you can run the container using:
             
             ```bash
-            docker run -it hbuilderx:<tag>
+            docker run -it hbuilderx:${{ needs.download.outputs.version }}
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
