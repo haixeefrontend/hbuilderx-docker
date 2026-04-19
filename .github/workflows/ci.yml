@@ -104,7 +104,7 @@ jobs:
     needs:
       - download
       - build
-    if: github.event_name == 'push' && needs.download.outputs.should_skip != 'true'
+    if: needs.download.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
