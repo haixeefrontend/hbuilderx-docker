@@ -90,7 +90,7 @@ jobs:
           for version in $(echo "$RAW_NEW_VERSIONS" | jq -r '.[]'); do
             new_entries=$(echo "$version" | jq -R '{
               version: .,
-              url: "https://download1.dcloud.net.cn/download/HBuilderX." + . + ".linux_x64.full.tar.gz"
+              url: "https://download1.dcloud.net.cn/download/HBuilderX.\(.).linux_x64.full.tar.gz"
             }' | jq -s .)
             echo "Appending new entries for version $version:"
             echo "$new_entries"
