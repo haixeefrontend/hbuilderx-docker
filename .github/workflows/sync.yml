@@ -35,7 +35,10 @@ jobs:
           function get_versions() {
             local -n ref=$1
             local url=$2
-            ref+=($(curl -s $url | grep -Eo '^## [0-9]+\.[0-9]+\.[0-9]+(-alpha)?' | sed 's/## //' | uniq))
+            content=$(curl -sL $url)
+            if [ $? -eq 0 ]; then
+              ref+=($(echo "$content" | grep -Eo '^## [0-9]+\.[0-9]+\.[0-9]+(-alpha)?' | sed 's/## //' | uniq))
+            fi
           }
 
           versions=()
@@ -59,14 +62,32 @@ jobs:
       - name: Update versions.json
         env:
           GH_TOKEN: ${{ github.token }}
+          RAW_NEW_VERSIONS: ${{ steps.query-versions.outputs.new_versions }}
         run: |
-          new_versions="${{ steps.query-versions.outputs.new_versions }}"
-          if [ -z "$new_versions" ] || [ "$new_versions" == "[]" ]; then
-            echo "No new versions found. Exiting."
+          if [ -z "$RAW_NEW_VERSIONS" ] || [ "$RAW_NEW_VERSIONS" == "[]" ]; then
+            echo "✅ No new versions found. Skipping update."
+
+            cat <<EOF >> $GITHUB_STEP_SUMMARY
+            # Summary
+
+            ✅ No new versions found. Skipping update.
+
+            EOF
+
             exit 0
           fi
-          echo "New versions to add: $new_versions"
-          for version in $(echo "$new_versions" | jq -r '.[]'); do
+          echo "✨ New versions found: $RAW_NEW_VERSIONS"
+
+          cat <<EOF >> $GITHUB_STEP_SUMMARY
+          # Summary
+
+          ## Versions
+
+          |Version|Workflow|
+          |:-:|:-:|
+          EOF
+
+          for version in $(echo "$RAW_NEW_VERSIONS" | jq -r '.[]'); do
             new_entries=$(echo "$version" | jq -R '{
               version: .,
               url: "https://download1.dcloud.net.cn/download/HBuilderX." + . + ".linux_x64.full.tar.gz"
@@ -84,5 +105,6 @@ jobs:
 
             ref=$(git rev-parse HEAD)
 
-            gh workflow run ci.yml -f ref=$ref
+            url=(gh workflow run ci.yml -f ref=$ref)
+            echo "|$version|$url|" >> $GITHUB_STEP_SUMMARY
           done
