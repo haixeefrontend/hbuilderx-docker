@@ -68,11 +68,11 @@ jobs:
             echo "✅ No new versions found. Skipping update."
 
             cat <<EOF >> $GITHUB_STEP_SUMMARY
-            # Summary
+          # Summary
 
-            ✅ No new versions found. Skipping update.
+          ✅ No new versions found. Skipping update.
 
-            EOF
+          EOF
 
             exit 0
           fi
@@ -105,6 +105,6 @@ jobs:
 
             ref=$(git rev-parse HEAD)
 
-            url=(gh workflow run ci.yml -f ref=$ref)
+            url=$(gh workflow run ci.yml -f ref=$ref)
             echo "|$version|$url|" >> $GITHUB_STEP_SUMMARY
           done
