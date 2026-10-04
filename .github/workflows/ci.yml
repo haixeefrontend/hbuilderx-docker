@@ -54,20 +54,11 @@ jobs:
           mkdir -p ./.cache/hbuilderx
           tar -xzf hbuilderx.tar.gz -C ./.cache/hbuilderx --strip-components=1
 
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
 
     needs: download
     if: needs.download.outputs.should_skip != 'true'
-
-    strategy:
-      fail-fast: true
-      matrix:
-        slim:
-          - true
-          - false
-
-    name: Build HBuilderX Docker Image ${{ matrix.slim && '(slim)' || '' }}
 
     steps:
       - name: Checkout code
@@ -85,40 +76,62 @@ jobs:
           key: hbuilderx-${{ needs.download.outputs.version }}
           path: ./.cache/hbuilderx
 
-      - name: Build Docker image for HBuilderX ${{ matrix.slim && 'slim' || 'full' }}
+      - name: Restore full Docker image cache
+        id: restore-full
+        uses: actions/cache@v5
+        with:
+          path: ./hbuilderx.${{ needs.download.outputs.version }}.tar
+          key: docker-image-full-${{ needs.download.outputs.version }}
+          restore-only: true
+
+      - name: Restore slim Docker image cache
+        id: restore-slim
+        uses: actions/cache@v5
+        with:
+          path: ./hbuilderx.${{ needs.download.outputs.version }}-slim.tar
+          key: docker-image-slim-${{ needs.download.outputs.version }}
+          restore-only: true
+
+      - name: Build full Docker image (if needed)
+        if: steps.restore-full.outputs.cache-hit != 'true'
         run: |
           docker buildx build \
             --platform linux/amd64 \
             -t hbuilderx:${{ needs.download.outputs.version }} \
             --build-arg HBUILDERX_PATH=./.cache/hbuilderx \
-            --build-arg SLIM=${{ matrix.slim }} \
-            --output type=docker,dest=./hbuilderx.${{ needs.download.outputs.version }}${{ matrix.slim && '-slim' || '' }}.tar .
+            --build-arg SLIM=false \
+            --output type=docker,dest=./hbuilderx.${{ needs.download.outputs.version }}.tar
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: hbuilderx.${{ needs.download.outputs.version }}${{ matrix.slim && '-slim' || '' }}.tar.zip
-          path: ./hbuilderx.${{ needs.download.outputs.version }}${{ matrix.slim && '-slim' || '' }}.tar
+      - name: Build slim Docker image (if needed)
+        if: steps.restore-slim.outputs.cache-hit != 'true'
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -t hbuilderx:${{ needs.download.outputs.version }} \
+            --build-arg HBUILDERX_PATH=./.cache/hbuilderx \
+            --build-arg SLIM=true \
+            --output type=docker,dest=./hbuilderx.${{ needs.download.outputs.version }}-slim.tar
 
-  release:
-    needs:
-      - download
-      - build
-    if: needs.download.outputs.should_skip != 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download built image
-        uses: actions/download-artifact@v6
+      - name: Save full Docker image cache
+        if: steps.restore-full.outputs.cache-hit != 'true'
+        uses: actions/cache@v5
         with:
-          path: .
-          merge-multiple: true
+          path: ./hbuilderx.${{ needs.download.outputs.version }}.tar
+          key: docker-image-full-${{ needs.download.outputs.version }}
+
+      - name: Save slim Docker image cache
+        if: steps.restore-slim.outputs.cache-hit != 'true'
+        uses: actions/cache@v5
+        with:
+          path: ./hbuilderx.${{ needs.download.outputs.version }}-slim.tar
+          key: docker-image-slim-${{ needs.download.outputs.version }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./hbuilderx.*.tar
+          files: |
+            ./hbuilderx.${{ needs.download.outputs.version }}.tar
+            ./hbuilderx.${{ needs.download.outputs.version }}-slim.tar
           prerelease: ${{ contains(needs.download.outputs.version, '-alpha') }}
           name: v${{ needs.download.outputs.version }}
           tag_name: v${{ needs.download.outputs.version }}
@@ -142,7 +155,7 @@ jobs:
             ```
 
             After loading the image, you can run the container using:
-            
+
             ```bash
             docker run -it hbuilderx:${{ needs.download.outputs.version }}
             ```
