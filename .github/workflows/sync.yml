@@ -9,14 +9,25 @@ on:
       - master
     paths:
       - .github/workflows/sync.yml
+  workflow_dispatch:
 
 permissions:
   actions: write
   contents: write
 
+# Only one sync may publish at a time. Without this, two runs would race on
+# versions.json and interleave releases, which breaks the ascending order.
+concurrency:
+  group: sync-versions
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # Each version waits for its build to finish, so allow plenty of time.
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -31,80 +42,125 @@ jobs:
       - name: Query new versions
         id: query-versions
         run: |
-          # Get versions from both release and alpha changelogs, then sort and deduplicate them
+          # Get versions from both release and alpha changelogs
           function get_versions() {
             local -n ref=$1
             local url=$2
-            content=$(curl -sL $url)
+            content=$(curl -sL "$url")
             if [ $? -eq 0 ]; then
               ref+=($(echo "$content" | grep -Eo '^## [0-9]+\.[0-9]+\.[0-9]+(-alpha)?' | sed 's/## //' | uniq))
             fi
           }
 
           versions=()
-          get_versions versions "https://hx.dcloud.net.cn/zh-cn/Tutorial/changelog/ReleaseNote_release.md?timestamp=$(date +%s%3N)"  
+          get_versions versions "https://hx.dcloud.net.cn/zh-cn/Tutorial/changelog/ReleaseNote_release.md?timestamp=$(date +%s%3N)"
           get_versions versions "https://hx.dcloud.net.cn/zh-cn/Tutorial/changelog/ReleaseNote_alpha.md?timestamp=$(date +%s%3N)"
-          versions=($(printf "%s\n" "${versions[@]}" | sort -urV))
 
-          # Current latest version is the first one in versions.json
-          # We want to find all versions that are newer than the latest version in versions.json
-          latest_version=$(cat versions.json | jq -r '.[0].version')
+          # Sort ascending (oldest first) so the newest version is published LAST,
+          # which lets GitHub mark that release as the "latest" one.
+          mapfile -t sorted_versions < <(printf "%s\n" "${versions[@]}" | sed '/^[[:space:]]*$/d' | LC_ALL=C sort -uV)
+
+          # Only consider versions that are not already tracked in versions.json.
+          # Simply stopping at the current head is not enough: the changelog can
+          # gain entries that sort below the current head, and releasing those
+          # would push an older version in front of the newer ones.
+          mapfile -t known_versions < <(jq -r '.[].version' versions.json)
           new_versions=()
-          for version in "${versions[@]}"; do
-            if [[ "$version" == "$latest_version" ]]; then
-              break
+          for version in "${sorted_versions[@]}"; do
+            if printf "%s\n" "${known_versions[@]}" | grep -qxF "$version"; then
+              continue
             fi
             new_versions+=("$version")
           done
 
-          echo "new_versions=$(printf "%s\n" "${new_versions[@]}" | jq -R . | jq -cs .)" >> $GITHUB_OUTPUT
+          echo "Pending versions (oldest first): ${new_versions[*]:-none}"
+          echo "new_versions=$(printf "%s\n" "${new_versions[@]:-}" | sed '/^$/d' | jq -R . | jq -cs .)" >> $GITHUB_OUTPUT
 
-      - name: Update versions.json
+      - name: Update versions.json and publish releases
         env:
-          GH_TOKEN: ${{ github.token }}
           RAW_NEW_VERSIONS: ${{ steps.query-versions.outputs.new_versions }}
         run: |
           if [ -z "$RAW_NEW_VERSIONS" ] || [ "$RAW_NEW_VERSIONS" == "[]" ]; then
             echo "✅ No new versions found. Skipping update."
 
-            cat <<EOF >> $GITHUB_STEP_SUMMARY
-          # Summary
-
-          ✅ No new versions found. Skipping update.
-
-          EOF
+            {
+              echo "# Summary"
+              echo
+              echo "✅ No new versions found. Skipping update."
+            } >> "$GITHUB_STEP_SUMMARY"
 
             exit 0
           fi
-          echo "✨ New versions found: $RAW_NEW_VERSIONS"
 
-          cat <<EOF >> $GITHUB_STEP_SUMMARY
-          # Summary
+          echo "✨ New versions found (oldest first): $RAW_NEW_VERSIONS"
 
-          ## Versions
+          {
+            echo "# Summary"
+            echo
+            echo "## Versions"
+            echo
+            echo "|Version|Run|Release|"
+            echo "|:-:|:-:|:-:|"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          |Version|Workflow|
-          |:-:|:-:|
-          EOF
-
+          failed=0
           for version in $(echo "$RAW_NEW_VERSIONS" | jq -r '.[]'); do
-            new_entries=$(echo "$version" | jq -R '{
+            # Prepend so versions.json stays newest-first and ci.yml can keep
+            # reading .[0] as the version that should be built.
+            echo "$version" | jq -R '{
               version: .,
               url: "https://download1.dcloud.net.cn/download/HBuilderX.\(.).linux_x64.full.tar.gz"
-            }' | jq -s .)
-            echo "Appending new entries for version $version:"
-            echo "$new_entries"
-            jq -s '.[0] + .[1]' <(echo "$new_entries") versions.json > tmp_versions.json && mv tmp_versions.json versions.json
+            }' > new_entry.json
 
-            echo "Updated versions.json:"
-            head -n 10 versions.json
+            jq -s '[.[1]] + .[0]' versions.json new_entry.json > tmp_versions.json && mv tmp_versions.json versions.json
+            rm -f new_entry.json
 
             git add versions.json
             git commit -m "ci: update HBuilderX version to $version"
             git push origin master
-
             ref=$(git rev-parse HEAD)
 
-            url=$(gh workflow run ci.yml -f ref=$ref)
-            echo "|$version|$url|" >> $GITHUB_STEP_SUMMARY
+            # Skip versions that already have a release tag.
+            if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+              echo "🏷️  Tag v${version} already exists, skipping build."
+              echo "|${version}|-|already released|" >> $GITHUB_STEP_SUMMARY
+              continue
+            fi
+
+            gh workflow run ci.yml -f ref=$ref
+
+            # Wait for this version's run to appear, then for it to finish, before
+            # starting the next version. This keeps releases in ascending order so
+            # the newest release is the one marked as "latest".
+            run_id=""
+            for _ in $(seq 1 60); do
+              run_id=$(gh run list --workflow ci.yml --commit "$ref" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+              if [ -n "$run_id" ]; then
+                break
+              fi
+              sleep 5
+            done
+
+            if [ -z "$run_id" ]; then
+              echo "::error::Could not find the triggered ci.yml run for $version"
+              echo "|${version}|-|trigger failed|" >> $GITHUB_STEP_SUMMARY
+              failed=1
+              break
+            fi
+
+            run_url=$(gh run view "$run_id" --json url --jq '.url')
+
+            if gh run watch "$run_id" --exit-status --interval 30; then
+              echo "✅ Published $version"
+              echo "|${version}|[run](${run_url})|✅|" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "::error::CI run for $version failed; not publishing newer versions"
+              echo "|${version}|[run](${run_url})|❌ failed|" >> $GITHUB_STEP_SUMMARY
+              failed=1
+              break
+            fi
           done
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
