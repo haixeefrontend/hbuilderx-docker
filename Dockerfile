@@ -64,6 +64,32 @@ RUN apt-get update && \
         do cp -r /opt/hbuilderx_full/plugins/$f /opt/hbuilderx/plugins/; done \
     fi;
 
+# 通用精简：删除 Linux/amd64 上永远运行不到的内容，full 与 slim 构建共用
+RUN set -eux; \
+    # 非 linux/amd64 平台的预编译 npm 二进制
+    find /opt/hbuilderx -type d \( \
+        -name "*win32*" -o -name "*darwin*" -o \
+        -name "*arm64*" -o -name "*armv7*" \
+    \) -prune -exec rm -rf {} +; \
+    # macOS/Windows 工具（Linux 下的 aapt2 在 static/ 根目录），以及 Windows 专用的 ktlint jar
+    rm -rf /opt/hbuilderx/plugins/uts-development-android/static/macosx \
+           /opt/hbuilderx/plugins/uts-development-android/static/win \
+           /opt/hbuilderx/plugins/uts-development-android/static/kt-format/ktlint-cli-1.5.0-all.jar; \
+    # iOS UTS 插件里只能在 macOS 上运行的 Swift 工具链（保留插件本身，只删 Mach-O 可执行文件）
+    rm -f /opt/hbuilderx/plugins/uts-development-ios/static/swift-format/swift-format \
+          /opt/hbuilderx/plugins/uts-development-ios/static/tots/swift-parser-cli; \
+    # iOS 离线打包 base：Linux 上无法进行 iOS 打包
+    rm -rf /opt/hbuilderx/plugins/launcher/base/iPhone_base.ipa \
+           /opt/hbuilderx/plugins/launcher/base/iPhone_simulator.zip \
+           /opt/hbuilderx/plugins/uniappx-launcher/base/iPhone_base.ipa \
+           /opt/hbuilderx/plugins/uniappx-launcher/base/iPhone_simulator.zip; \
+    # sourcemap 以及 node_modules 里的文档、测试文件
+    find /opt/hbuilderx -type f -name "*.map" -delete; \
+    find /opt/hbuilderx -path "*/node_modules/*" -type f \
+        \( -iname "readme*" -o -iname "changelog*" -o -iname "history*" \) -delete; \
+    find /opt/hbuilderx -path "*/node_modules/*" -type d \
+        \( -name "test" -o -name "tests" -o -name "__tests__" \) -prune -exec rm -rf {} +
+
 # 基础镜像：Debian Bookworm Slim
 FROM debian:bookworm-slim
 
@@ -104,6 +130,16 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone &
     # 清理缓存
     rm -rf /var/lib/apt/lists/* && \
     apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false && \
+    # 删除 Mesa 软件渲染实现：容器内不创建 OpenGL 上下文，
+    # 运行期只会加载 libGL/libGLX/libGLdispatch，dri/LLVM/ICU 等约 196MB 都不会被用到
+    rm -rf /usr/lib/x86_64-linux-gnu/dri \
+           /usr/lib/x86_64-linux-gnu/libLLVM-15.so* \
+           /usr/lib/x86_64-linux-gnu/libz3.so* \
+           /usr/lib/x86_64-linux-gnu/libGLX_mesa.so* \
+           /usr/lib/x86_64-linux-gnu/libGLX_indirect.so* \
+           /usr/lib/x86_64-linux-gnu/libglapi.so* \
+           /usr/lib/x86_64-linux-gnu/libicu*.so.72* \
+           /usr/lib/x86_64-linux-gnu/libxml2.so* && \
     rm -rf /usr/share/man/* /usr/share/doc/* /usr/share/locale/* /usr/lib/locale/* /usr/share/i18n/* && \
     rm -rf /usr/share/fonts/* /etc/fonts/* && \
     rm -rf /tmp/* && \
