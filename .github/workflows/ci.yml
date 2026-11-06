@@ -10,6 +10,10 @@ on:
         required: false
         type: string
 
+# 仓库默认 token 只有 read 权限，创建 GitHub Release 需要显式申请 contents: write
+permissions:
+  contents: write
+
 jobs:
   download:
     runs-on: ubuntu-latest
@@ -50,7 +54,16 @@ jobs:
       - name: Download HBuilderX ${{ steps.get-versions.outputs.version }}
         if: steps.cache-hbuilderx.outputs.cache-hit != 'true' && steps.get-versions.outputs.should_skip != 'true'
         run: |
-          wget -O ./hbuilderx.tar.gz ${{ steps.get-versions.outputs.url }}
+          # wget 在非交互终端上的进度条会往日志刷出大量行，因此静默下载并定期报告已下载大小
+          wget -q -O ./hbuilderx.tar.gz "${{ steps.get-versions.outputs.url }}" &
+          wget_pid=$!
+          echo "⏳ Downloading HBuilderX..."
+          while kill -0 "$wget_pid" 2>/dev/null; do
+            sleep 20
+            echo "   downloaded: $(du -h ./hbuilderx.tar.gz 2>/dev/null | cut -f1)"
+          done
+          wait "$wget_pid"
+
           mkdir -p ./.cache/hbuilderx
           tar -xzf hbuilderx.tar.gz -C ./.cache/hbuilderx --strip-components=1
 
