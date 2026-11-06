@@ -82,7 +82,7 @@ jobs:
         with:
           path: ./hbuilderx.${{ needs.download.outputs.version }}.tar
           key: docker-image-full-${{ needs.download.outputs.version }}
-          restore-only: true
+          lookup-only: true
 
       - name: Restore slim Docker image cache
         id: restore-slim
@@ -90,7 +90,7 @@ jobs:
         with:
           path: ./hbuilderx.${{ needs.download.outputs.version }}-slim.tar
           key: docker-image-slim-${{ needs.download.outputs.version }}
-          restore-only: true
+          lookup-only: true
 
       - name: Build full Docker image (if needed)
         if: steps.restore-full.outputs.cache-hit != 'true'
@@ -100,7 +100,8 @@ jobs:
             -t hbuilderx:${{ needs.download.outputs.version }} \
             --build-arg HBUILDERX_PATH=./.cache/hbuilderx \
             --build-arg SLIM=false \
-            --output type=docker,dest=./hbuilderx.${{ needs.download.outputs.version }}.tar
+            --output type=docker,dest=./hbuilderx.${{ needs.download.outputs.version }}.tar \
+            .
 
       - name: Build slim Docker image (if needed)
         if: steps.restore-slim.outputs.cache-hit != 'true'
@@ -110,7 +111,8 @@ jobs:
             -t hbuilderx:${{ needs.download.outputs.version }} \
             --build-arg HBUILDERX_PATH=./.cache/hbuilderx \
             --build-arg SLIM=true \
-            --output type=docker,dest=./hbuilderx.${{ needs.download.outputs.version }}-slim.tar
+            --output type=docker,dest=./hbuilderx.${{ needs.download.outputs.version }}-slim.tar \
+            .
 
       - name: Save full Docker image cache
         if: steps.restore-full.outputs.cache-hit != 'true'
